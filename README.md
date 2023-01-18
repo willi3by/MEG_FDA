@@ -3,10 +3,10 @@ Code used for FDA of MEG attack data across development.
 
 
 ## FDA Analysis
-## In the FDA_Results_clean.Rmd file, you will find the full code to recreate the analysis performed for FDA analysis of in-silico MEG attack analysis data. The system requirements are:
-## R 4.1.0
-## R packages: fda (5.1.9). ggplot2 (3.3.5), ggrepel (0.9.1), reshape2 (1.4.4), RColorBrewer (1.2), pracma (2.3.3), plotly (4.9.4.1), R.matlab (3.6.2), gridExtra (2.3), parallel (4.1.0)
-## Analyses were performed on an M1 Macbook Air running MacOS 11.6.8. Analyses should still run on Intel-based systems. 
+### In the FDA_Results_clean.Rmd file, you will find the full code to recreate the analysis performed for FDA analysis of in-silico MEG attack analysis data. The system requirements are:
+- R 4.1.0
+- R packages: fda (5.1.9). ggplot2 (3.3.5), ggrepel (0.9.1), reshape2 (1.4.4), RColorBrewer (1.2), pracma (2.3.3), plotly (4.9.4.1), R.matlab (3.6.2), gridExtra (2.3), parallel (4.1.0)
+- Analyses were performed on an M1 Macbook Air running MacOS 11.6.8. Analyses should still run on Intel-based systems. 
 
 ## Since all analyses were performed with open-source packages, installation for recreating these steps should only require installation of R and the above packages. Please see the R documentation here https://www.r-project.org/ for more information. Installation time, depending on your computer and current set up, should take around 10-20 minutes. 
 
