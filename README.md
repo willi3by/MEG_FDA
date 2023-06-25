@@ -5,10 +5,10 @@ Code used for FDA of MEG attack data across development.
 ## FDA Analysis
 ### In the FDA_Results_clean.Rmd file, you will find the full code to recreate the analysis performed for FDA analysis of in-silico MEG attack analysis data. The system requirements are:
 - R 4.1.0
-- R packages: fda (5.1.9), fds (1.8), ggplot2 (3.3.5), reshape2 (1.4.4), pracma (2.3.3), R.matlab (3.6.2), refund (0.1-30), stringi (1.7.3), FoSIntro (1.0.3)
+- R packages: fda (5.1.9), fds (1.8), ggplot2 (3.3.5), reshape2 (1.4.4), pracma (2.3.3), R.matlab (3.6.2), refund (0.1-30), stringi (1.7.3), and tidyr (1.3.0)
 - Analyses were performed on an M1 Macbook Air running MacOS 11.6.8. Analyses should still run on Intel-based systems. 
 
-## Since all analyses were performed with open-source packages, installation for recreating these steps should only require installation of R and the above packages. Please see the R documentation here https://www.r-project.org/ for more information. Installation time, depending on your computer and current set up, should take around 10-20 minutes. Note: FoSIntro can only be installed via the developer tools as it is not on CRAN. For this installation, devtools (2.4.2) was used using the following command: devtools::install_github("bauer-alex/FoSIntro").
+## Since all analyses were performed with open-source packages, installation for recreating these steps should only require installation of R and the above packages. Please see the R documentation here https://www.r-project.org/ for more information. Installation time, depending on your computer and current set up, should take around 10-20 minutes.
 
 
 ## To run the code:
