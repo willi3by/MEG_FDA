@@ -1,0 +1,223 @@
+---
+title: "Updated FDA Analysis"
+author: "Brady Williamson, PhD"
+date: "5/27/2023"
+output: html_document
+params:
+  input_file:
+    value: x
+  analysis_title:
+    value: x
+---
+
+```{r setup, results=FALSE, echo=FALSE, message=FALSE}
+knitr::opts_chunk$set(warning = FALSE, message = FALSE)
+library(fda)
+library(ggplot2)
+library(reshape2)
+library(pracma)
+library(R.matlab)
+library(refund)
+library(stringi)
+library(tidyr)
+source('utilities.R')
+`%notin%` <- Negate(`%in%`)
+```
+
+# Notebook Summary
+This notebook conducts functional data analysis for brain connectivity data across development, testing whether a certain metric is significant over a range of network densities and to test whether the effects of independent variables vary with these functions in a significant way. Participants underwent magentoencephalography (MEG) scanning while performing a stories listening task. Brain connectivity was estimated using weighted phase lag index (wPLI) for both regions in a whole-brain parcellation and within prespecified regions of a language network. To assess network robustness to failure, *In silico* attacks were performed on the resulting connectivity matrices based on three attack strategies: random attacks, attacks based on eigenvector centrality, and attacks based on betweenness centrality. Percolation point was used to define network failure, which was deemed to be the point at which the second largest connected component of the network became dismantled. This analysis was was performed over a range of densities to overcome the typical problem of arbitrarily choosing a network density for analyses, which may or may not replicate well using a different density. It also overcomes the problem of mutliple comparisons that would limit mass univariate analysis of testing each density independently. Function-on-scalar (penalized flexible functional regression (pffr)) regression was used to test the effect of 4 scalar ndependent variables (age, sex, mean euclidean node distance, handedness measured by Edinburgh handedness inventory) on functions of percolation point by density. Through this analysis, we found that age has a significant inverse relationshipwith percolation point across densities, indicating a decrease in percolation point (increased network vulnerability) with increasing age. We conclude that this phenomenon may help explain the well-established "pediatric advantage" for language recovery after brain insult. For more details, please see the primary publication (insert reference).
+
+### Load data and trim.
+
+```{r import_data}
+func_data <- readMat('/Users/willi3by/Desktop/Collaborations/FDA_Perc_Point_Project/Nat_Comm_Review/submission_docs/nat_comm_analysis/stories_FDA_attack/stories_perc_point_FDA_between_REDO.mat')
+func_data <- func_data$perc.point.FDA
+func_mat <- do.call(rbind, func_data)
+func_mat <- do.call(rbind, func_mat)
+func_df <- as.data.frame(func_mat)
+func_df_trimmed <- func_df[,c(280:400)] #Trim because 100%-30% density seems unstable
+func_df_melted <- melt(t(func_df_trimmed))
+```
+
+### Plot the original data.
+
+```{r plot_orig_data}
+g <- ggplot(data = func_df_melted) + geom_line(aes(x=Var1, y=value, group=Var2, color=as.factor(Var2))) +
+  theme_classic() + theme(legend.position = "none")
+g
+```
+
+### Set parameters for FDA Analysis. 
+- #### fdnames: names of dimensions in functional data object, list of domain (time, density, space, etc.), replications (subjects), and value (i.e., Perc point)
+- #### perc_mat: trimmed dataframe from above, in matrix format Num_Density_Points x Subjects
+- #### densities: vector of density points, should be same length as n_rows of perc_mat
+- #### norder: order of polynomial at each knot of the B-spline
+- #### nbasis: number of basis functions, determined by Num_Density_Points+norder-2 (subtracting 2 accomodates for first and last spline, where fit is least stable)
+
+```{r setup_fda_analysis}
+fdnames <- list("Density", "Subject", "Percolation Point")
+perc_mat <- as.matrix(t(func_df_trimmed))
+densities <- c(280:400) #30% to 0% since inverse
+norder <- 4
+nbasis <- length(densities)+norder-2 #-2 for end splines
+nsubjs <- 82
+```
+
+### Remove outliers with "spike" at the end of the function due to instability in the perc point estimate.
+
+```{r}
+last_perc_row <- scale(perc_mat[size(perc_mat)[1],])
+outliers <- which(abs(last_perc_row) > 2)
+perc_mat <- perc_mat[,-c(outliers)]
+```
+
+### Create first pass smooths, fd object.
+
+```{r create_basis_and_smooth}
+perc_basis <- create.bspline.basis(c(280,400), nbasis, norder, densities)
+lambda_range = seq(from=-5, to=15, length=20) #Exponential range to cover as much ground as possible.
+all_fds_and_dfs <- smooth_individuals(lambda_range = lambda_range, evalrange = densities,
+                              data_mat = perc_mat, basis_obj = perc_basis, derivative = 2)
+percfd <- build_fd(all_fds_and_dfs[[1]])
+plot(percfd)
+```
+
+### Assess goodness of fit by looking at variance of residuals. Steps are:
+1. Generate predicted values.
+2. Calculate residuals (actual-predicted)
+3. Calculate variance by subject.
+4. Calculate variance by density point.
+5. Create standard deviation (by density point) curve and smooth.
+6. Evaluate standard deviation fit to get plot of standard deviation over density. 
+7. Remove outliers and refit fd.
+
+```{r plot_residuals}
+pred_percmat <- eval.fd(densities, percfd) #Get predicted functions from fd fit
+percres <- perc_mat - pred_percmat #Calculate residuals (actual - predicted)
+percvar1 <- apply(percres^2, 1, sum)/ncol(perc_mat) #Sum of squared residuals by subject divided by number of replicates 
+percvar2 <- apply(percres^2, 2, sum)/(nrow(perc_mat) - unlist(all_fds_and_dfs[[2]])) #Sum of squared residuals by density point, divided by density points minus degrees of freedom to fit each curve
+plot(percvar1, type='l', xlab="Density", ylab="Log(Standard Deviation)", main="Standard Deviation by Density")
+plot(percvar2, xlab="Subjects", ylab="Standard Deviation", main="Standard Deviation by Subject")
+#At this point check for outliers and remove from initial analysis. 
+percvar2_scaled <- scale(percvar2)
+sd_outliers <- which(abs(percvar2_scaled) > 2)
+sd_outliers <- sd_outliers[sd_outliers %notin% outliers]
+print(paste(sd_outliers, "is an outlier"))
+#Now refit fd.
+perc_mat <- perc_mat[,-c(sd_outliers)]
+lambda_range = seq(from=-5, to=15, length=20) #Exponential range to cover as much ground as possible.
+all_fds_and_dfs <- smooth_individuals(lambda_range = lambda_range, evalrange = densities,
+                              data_mat = perc_mat, basis_obj = perc_basis, derivative = 2)
+percfd <- build_fd(all_fds_and_dfs[[1]])
+# plot(percfd)
+```
+
+### After outliers are removed, load in demographic data and run penalized flexible functional regression (pffr). 
+
+```{r fit_pffr_model}
+load('demos.R')
+ages <- df$Age[-c(sd_outliers,outliers)]
+# plotQuartiles(ages, all_fds_and_dfs, percfd, analysis_title)
+sex <- as.numeric(df$Sex[-c(sd_outliers,outliers)])
+node_dist <- df$Mean_Euc_Dist[-c(sd_outliers,outliers)]
+handedness <- df$Handedness[-c(sd_outliers,outliers)]
+Y <- t(perc_mat)
+data <- list(ages = c(ages), sex = factor(sex), males = ifelse(sex==1,1,0), females = ifelse(sex==2, 1, 0), handedness = handedness, node_dist = node_dist, Y = as.data.frame(Y))
+class(data) <- "data.frame"
+attr(data, "row.names") <- 1:length(ages)
+variable_names_list <- list("Intercept", "Age", "Males", "Females", "Node Distance", "Handedness")
+pffr_model <- pffr(Y ~ 1 + ages + males + females + node_dist + handedness, data = data)
+print(summary(pffr_model))
+```
+
+### Since the number of points (i.e., degrees of freedom) are inherently so large in functional data, we must run a ratio likelihood test to test for significance of the overall model. If the overall model is significant from this test, we will move on to testing each predictor. The p-value for the overall model is corrected for 6 multiple comparisons (Bonferroni) since we are running 6 models for overall effects (whole-brain and stories network, 3 attack strategies each).
+
+### Test of complete model versus model with only intercept for function r^2.
+```{r hypothesis_testing_overall_model}
+pffr_model_intercept_only <- pffr(Y ~ 1)
+functional_r2 <- (summary(pffr_model)$r.sq - summary(pffr_model_intercept_only)$r.sq)/(1-summary(pffr_model_intercept_only)$r.sq)
+print(paste0("Functional Variance Explained by Overall Model: ", functional_r2))
+```
+
+### Test of complete model versus model where IVs are held constant to test for overall functional model significance.
+```{r}
+pffr_model_2 <- pffr(Y ~ 1 + c(ages) + c(males) + c(females) + c(node_dist) + c(handedness), data = data)
+mtest <- pffr_model; mtest_2 <- pffr_model_2
+class(mtest) <- class(mtest)[-1]
+class(mtest_2) <- class(mtest_2)[-1]
+overall_model_test <- anova(mtest_2, mtest, test="F")
+print(summary(pffr_model_2))
+print(overall_model_test)
+```
+
+### If overall model is significant, we will run bootstrapping to get 95% confidence intervals for each of the predictors.
+
+```{r bootstrap_for_CIs}
+if(!is.na(overall_model_test$`Pr(>F)`[2])){
+  if(overall_model_test$`Pr(>F)`[2] < 0.008){
+    bs <- coefboot.pffr(object = pffr_model, B=1000, ncpus = 20, parallel = "multicore")
+    CIs_list <- getCIsList(bs)
+    plotBetaCIs(pffr_model, CIs_list, variable_names_list)
+  } else{
+    print("Overall Model Not Significant")
+  }
+}
+```
+
+
+### If overall model is significant, we also check the model assumptions to esnure results can be interpreted responsibly. These are not as strict as a typical linear model as the bootstrapping estimates will take care of some of the skew. 
+
+```{r model_check}
+pffr.check(pffr_model)
+```
+
+### Finally, we run post-hoc likelihood ratio tests for each variable that was significant in the original model. Since sex is a categorical variable, two different comparisons using dummy coded variables need to be run: one for F and one for M.
+
+```{r post_hoc_testing}
+if(!is.na(overall_model_test$`Pr(>F)`[2])) {
+  if (overall_model_test$`Pr(>F)`[2] < 0.008) {
+    no_age_model <- pffr(Y ~ 1 + males + females + handedness + node_dist, data=data)
+    no_males_model <- pffr(Y ~ 1 + ages + females + handedness + node_dist, data=data)
+    no_females_model <- pffr(Y ~ 1 + ages + males + handedness + node_dist, data=data)
+    no_hand_model <- pffr(Y ~ 1 + ages + males + females + node_dist, data=data)
+    mtest <- pffr_model; mtest_2 <- no_age_model; mtest_3 <- no_males_model; mtest_4 <- no_females_model; mtest_5 <- no_hand_model
+    class(mtest) <- class(mtest)[-1]
+    class(mtest_2) <- class(mtest_2)[-1]
+    class(mtest_3) <- class(mtest_3)[-1]
+    class(mtest_4) <- class(mtest_4)[-1]
+    class(mtest_5) <- class(mtest_5)[-1]
+    print(anova(mtest_2, mtest, test="F"))
+    print(anova(mtest_3, mtest, test="F"))
+    print(anova(mtest_4, mtest, test="F"))
+    print(anova(mtest_5, mtest, test="F"))
+  }
+}
+
+```
+```{r get_sr2}
+sr_age <- sqrt(summary(pffr_model)$r.sq - summary(no_age_model)$r.sq)
+sr_males <- sqrt(summary(pffr_model)$r.sq - summary(no_males_model)$r.sq)
+sr_females <- sqrt(summary(pffr_model)$r.sq - summary(no_females_model)$r.sq)
+sr_hand <- sqrt(summary(pffr_model)$r.sq - summary(no_hand_model)$r.sq)
+print(sr_age)
+print(sr_males)
+print(sr_females)
+print(sr_hand)
+```
+
+```{r get_functional_r2}
+age_model <- pffr(Y ~ 1 + ages, data=data)
+males_model <- pffr(Y ~ 1 + males, data=data)
+females_model <- pffr(Y ~ 1 + females, data=data)
+handedness_model <- pffr(Y ~ 1 + handedness, data=data)
+functional_r2_age <- (summary(age_model)$r.sq - summary(pffr_model_intercept_only)$r.sq)/(1-summary(pffr_model_intercept_only)$r.sq)
+functional_r2_males <- (summary(males_model)$r.sq - summary(pffr_model_intercept_only)$r.sq)/(1-summary(pffr_model_intercept_only)$r.sq)
+functional_r2_females <- (summary(females_model)$r.sq - summary(pffr_model_intercept_only)$r.sq)/(1-summary(pffr_model_intercept_only)$r.sq)
+functional_r2_handedness <- (summary(handedness_model)$r.sq - summary(pffr_model_intercept_only)$r.sq)/(1-summary(pffr_model_intercept_only)$r.sq)
+print(paste0("Age functional R^2: ", functional_r2_age))
+print(paste0("Males functional R^2: ", functional_r2_males))
+print(paste0("Females functional R^2: ", functional_r2_females))
+print(paste0("Handedness functional R^2: ", functional_r2_handedness))
+```
+
+
