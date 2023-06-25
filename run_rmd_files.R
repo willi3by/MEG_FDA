@@ -1,6 +1,6 @@
-setwd('/Users/willi3by/Desktop/Collaborations/FDA_Perc_Point_Project/Nat_Comm_Review/submission_docs/nat_comm_analysis/')
+setwd() #Enter path to analysis folder.
 
-perc_file_path <- '/Users/willi3by/Desktop/Collaborations/FDA_Perc_Point_Project/Nat_Comm_Review/submission_docs/nat_comm_analysis/stories_FDA_attack/'
+perc_file_path <- #Enter path to subfolder in analysis folder with perc point by density mat files.
 percpoint_files <- grep("REDO", list.files(perc_file_path),value=T)
 
 
